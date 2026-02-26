@@ -6,7 +6,7 @@
 
 const STORAGE_KEY = 'finance_v2';
 const DEFAULT_CATS = ['Prace', 'Sporeni', 'Investice', 'Nakupy', 'Jine'];
-const MONTH_NAMES  = ['','Leden','Unor','Brezen','Duben','Kveten','Cerven','Cervenec','Srpen','Zari','Rijen','Listopad','Prosinec'];
+const MONTH_NAMES  = ['','Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'];
 
 // Příjmy — zelené + modré odstíny (střídají se)
 const GREEN_SHADES = ['#1fd87a','#2870ff','#3eea92','#4090ff','#0fa854','#60b0ff','#6ef4b4','#1a50cc','#0a6634','#80c8ff'];
@@ -25,27 +25,36 @@ const state = {
   month:      null,
   charts:     {},   // hlavní grafy — klíč → Chart instance
   miniCharts: {},   // mini grafy v sub-blocích — safeId → Chart instance | null
+  search:     '',   // vyhledávací řetězec
+  incMode:    'cat', // 'cat' | 'item' — režim grafu příjmů
+  expMode:    'cat', // 'cat' | 'item' — režim grafu výdajů
 };
 
 // ═══════════════════════════════════════════════════
-// STORAGE
+// STORAGE  (s jednoduchým in-memory cache)
 // ═══════════════════════════════════════════════════
 
+let _cache = null;
+
 function load() {
+  if (_cache) return _cache;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const d   = raw ? JSON.parse(raw) : {};
     if (!Array.isArray(d.months))     d.months     = [];
     if (!Array.isArray(d.customCats)) d.customCats = [];
-    if (!Array.isArray(d.catOrder))   d.catOrder   = [];   // uložené pořadí kategorií
-    if (!Array.isArray(d.hiddenCats)) d.hiddenCats = [];   // skryté (smazané) kategorie
-    return d;
-  } catch { return { months: [], customCats: [], catOrder: [], hiddenCats: [] }; }
+    if (!Array.isArray(d.catOrder))   d.catOrder   = [];
+    if (!Array.isArray(d.hiddenCats)) d.hiddenCats = [];
+    return (_cache = d);
+  } catch { return (_cache = { months: [], customCats: [], catOrder: [], hiddenCats: [] }); }
 }
 
 function save(data) {
+  _cache = data;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
+
+function invalidateCache() { _cache = null; }
 
 function getOrCreate(data, year, month) {
   let m = data.months.find(x => x.year === year && x.month === month);
@@ -104,64 +113,147 @@ function saveCatOrder() {
 function deleteCategory(cat) {
   const data    = load();
   const hasData = data.months.some(m => (m.entries||[]).some(e => e.category === cat));
+  const isDef   = DEFAULT_CATS.includes(cat);
 
-  const isDef = DEFAULT_CATS.includes(cat);
+  const title = isDef ? `Skrýt kategorii "${cat}"?` : `Smazat kategorii "${cat}"?`;
+  let   msg   = isDef
+    ? `Výchozí kategorie bude skryta z pohledu.`
+    : `Kategorie bude trvale smazána.`;
+  if (hasData) msg += ` Všechny záznamy v ní budou odstraněny!`;
 
-  let msg = isDef
-    ? `Kategorie "${cat}" je výchozí — bude skryta z pohledu.\n`
-    : `Smazat kategorii "${cat}"?\n`;
-  if (hasData) msg += `\nPOZOR: Všechny záznamy v této kategorii budou smazány!`;
-
-  if (!confirm(msg + '\nPokračovat?')) return;
-
-  // Smaž záznamy v kategorii ze všech měsíců
-  for (const m of data.months) {
-    m.entries = (m.entries||[]).filter(e => e.category !== cat);
-  }
-  // Odstraň z customCats
-  data.customCats = (data.customCats||[]).filter(c => c !== cat);
-  // Odstraň z catOrder
-  data.catOrder = (data.catOrder||[]).filter(c => c !== cat);
-  // Výchozí kategorie jen přidáme do hiddenCats (nelze je smazat ze storage)
-  if (isDef) {
-    if (!data.hiddenCats) data.hiddenCats = [];
-    if (!data.hiddenCats.includes(cat)) data.hiddenCats.push(cat);
-  }
-  // Odstraň z hiddenCats pokud tam byla custom
-  if (!isDef) {
-    data.hiddenCats = (data.hiddenCats||[]).filter(c => c !== cat);
-  }
-
-  save(data);
-  const m = getOrCreate(data, state.year, state.month);
-  refreshMonthUI(m.entries);
-  renderSubTables(m);
-  renderSidebar();
-  toast(`Kategorie "${cat}" smazána`);
+  openConfirm(title, msg, () => {
+    const d2 = load();
+    for (const m of d2.months) {
+      m.entries = (m.entries||[]).filter(e => e.category !== cat);
+    }
+    d2.customCats = (d2.customCats||[]).filter(c => c !== cat);
+    d2.catOrder   = (d2.catOrder||[]).filter(c => c !== cat);
+    if (isDef) {
+      if (!d2.hiddenCats) d2.hiddenCats = [];
+      if (!d2.hiddenCats.includes(cat)) d2.hiddenCats.push(cat);
+    } else {
+      d2.hiddenCats = (d2.hiddenCats||[]).filter(c => c !== cat);
+    }
+    save(d2);
+    const m = getOrCreate(d2, state.year, state.month);
+    refreshMonthUI(m.entries);
+    renderSubTables(m);
+    renderSidebar();
+    toast(`Kategorie "${cat}" smazána`);
+  });
 }
 
 // ═══════════════════════════════════════════════════
-// SIDEBAR
+// VYHLEDÁVÁNÍ
+// ═══════════════════════════════════════════════════
+
+function onSearch(val) {
+  state.search = val.toLowerCase().trim();
+  document.getElementById('searchClear').style.display = state.search ? 'block' : 'none';
+  applySearch();
+}
+
+function clearSearch() {
+  state.search = '';
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchClear').style.display = 'none';
+  applySearch();
+}
+
+function applySearch() {
+  const q    = state.search;
+  const grid = document.getElementById('subGrid');
+  if (!grid) return;
+  for (const block of grid.querySelectorAll('.sub-block')) {
+    let blockMatch = false;
+    for (const tr of block.querySelectorAll('tbody tr')) {
+      const match = !q || tr.textContent.toLowerCase().includes(q);
+      tr.classList.toggle('row-hidden', !match);
+      if (match) blockMatch = true;
+    }
+    block.classList.toggle('search-dim', q ? !blockMatch : false);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// CUSTOM CONFIRM
+// ═══════════════════════════════════════════════════
+
+let _confirmCb = null;
+
+function openConfirm(title, msg, onYes) {
+  _confirmCb = onYes;
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMsg').textContent   = msg;
+  document.getElementById('modalConfirm').classList.add('open');
+}
+
+function confirmYes() {
+  closeModal('modalConfirm');
+  if (_confirmCb) { _confirmCb(); _confirmCb = null; }
+}
+
+document.getElementById('modalConfirm').addEventListener('click', e => {
+  if (e.target === document.getElementById('modalConfirm')) closeModal('modalConfirm');
+});
+
+// ═══════════════════════════════════════════════════
+// SIDEBAR  —  skupiny podle roku + mazání měsíce
 // ═══════════════════════════════════════════════════
 
 function renderSidebar() {
   const data  = load();
   const el    = document.getElementById('sbMonths');
-  const items = [...data.months].sort((a,b) => a.year !== b.year ? b.year-a.year : b.month-a.month);
+  // Template (year=0) se nezobrazuje v seznamu měsíců
+  const items = [...data.months].filter(m => m.year > 0).sort((a,b) => a.year !== b.year ? b.year-a.year : b.month-a.month);
+  // Aktivní stav template tlačítka
+  const tmplBtn = document.getElementById('navTemplate');
+  if (tmplBtn) tmplBtn.classList.toggle('active', state.year === 0);
   el.innerHTML = '';
   if (!items.length) {
-    el.innerHTML = '<div style="padding:8px 18px;color:var(--text3);font-size:0.78rem">Zadne zaznamy</div>';
+    el.innerHTML = '<div style="padding:8px 18px;color:var(--text3);font-size:0.78rem">Žádné záznamy</div>';
     return;
   }
-  for (const m of items) {
-    const bal = (m.entries||[]).reduce((s,e) => s + e.amount, 0);
-    const div = document.createElement('div');
-    div.className = 'month-item' + (m.year === state.year && m.month === state.month ? ' active' : '');
-    div.innerHTML = `<span class="month-name">${MONTH_NAMES[m.month]} ${m.year}</span>
-      <span class="month-bal ${bal >= 0 ? 'pos' : 'neg'}">${fmtSigned(bal)}</span>`;
-    div.addEventListener('click', () => openMonth(m.year, m.month));
-    el.appendChild(div);
+
+  // Skupiny podle roku
+  const years = [...new Set(items.map(m => m.year))].sort((a,b) => b-a);
+  for (const year of years) {
+    const yearEl = document.createElement('div');
+    yearEl.className = 'sb-year-group';
+    yearEl.innerHTML = `<div class="sb-year-label">${year}</div>`;
+
+    for (const m of items.filter(x => x.year === year)) {
+      const bal = (m.entries||[]).reduce((s,e) => s + e.amount, 0);
+      const div = document.createElement('div');
+      div.className = 'month-item' + (m.year === state.year && m.month === state.month ? ' active' : '');
+      div.innerHTML = `
+        <span class="month-name">${MONTH_NAMES[m.month]}</span>
+        <span class="month-bal ${bal >= 0 ? 'pos' : 'neg'}">${fmtSigned(bal)}</span>
+        <button class="month-del" title="Smazat měsíc" onclick="event.stopPropagation();deleteMonth(${m.year},${m.month})">×</button>`;
+      div.addEventListener('click', () => openMonth(m.year, m.month));
+      yearEl.appendChild(div);
+    }
+    el.appendChild(yearEl);
   }
+}
+
+function deleteMonth(year, month) {
+  openConfirm(
+    `Smazat ${MONTH_NAMES[month]} ${year}?`,
+    'Všechny záznamy v tomto měsíci budou trvale smazány. Tato akce je nevratná.',
+    () => {
+      const data = load();
+      data.months = data.months.filter(m => !(m.year === year && m.month === month));
+      save(data);
+      renderSidebar();
+      if (state.year === year && state.month === month) {
+        state.year = null; state.month = null; state.view = null;
+        document.getElementById('viewMonth').classList.remove('active');
+        document.getElementById('viewWelcome').style.display = '';
+      }
+      toast(`${MONTH_NAMES[month]} ${year} smazán`);
+    }
+  );
 }
 
 // ═══════════════════════════════════════════════════
@@ -172,6 +264,11 @@ function showView(v) {
   document.getElementById('viewWelcome').style.display = 'none';
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.sb-btn').forEach(el => el.classList.remove('active'));
+  // Sync mobile nav
+  const mD = document.getElementById('mobNavDash');
+  const mM = document.getElementById('mobNavMonth');
+  if (mD) mD.classList.toggle('active', v === 'dashboard');
+  if (mM) mM.classList.toggle('active', v === 'month');
   if (v === 'dashboard') {
     document.getElementById('viewDashboard').classList.add('active');
     document.getElementById('navDash').classList.add('active');
@@ -179,8 +276,13 @@ function showView(v) {
     renderDashboard();
   } else {
     document.getElementById('viewMonth').classList.add('active');
-    document.getElementById('navMonth').classList.add('active');
-    if (state.year) renderMonthView();
+    // Template má žlutý dot — zvýraznit jiné tlačítko než navMonth
+    if (state.year === 0) {
+      const t = document.getElementById('navTemplate'); if (t) t.classList.add('active');
+    } else {
+      document.getElementById('navMonth').classList.add('active');
+    }
+    if (state.year != null) renderMonthView();
   }
   state.view = v;
 }
@@ -197,7 +299,7 @@ function openMonth(year, month) {
 
 function buildYearOpts(sel, selY) {
   const data  = load();
-  const years = [...new Set(data.months.map(m => m.year))].sort((a,b) => a-b);
+  const years = [...new Set(data.months.filter(m => m.year > 0).map(m => m.year))].sort((a,b) => a-b);
   if (!years.length) years.push(new Date().getFullYear());
   sel.innerHTML = '';
   years.forEach(y => sel.appendChild(new Option(y, y, y === selY, y === selY)));
@@ -259,34 +361,87 @@ function renderDashboard() {
   document.getElementById('dExpense').textContent   = fmt(expense);
   document.getElementById('dBalance').textContent   = fmt(balance);
   document.getElementById('dBalance').className     = 'card-value yellow';
-  document.getElementById('dMonths').textContent    = mc;
-  document.getElementById('dIncomeSub').textContent  = mc ? `prumer ${fmt(income/mc)} / mesic` : '';
-  document.getElementById('dExpenseSub').textContent = mc ? `prumer ${fmt(expense/mc)} / mesic` : '';
-  document.getElementById('dBalanceSub').textContent = mc ? `prumer ${fmt(balance/mc)} / mesic` : '';
+  document.getElementById('dIncomeSub').textContent  = mc ? `průměr ${fmt(income/mc)} / měsíc` : '';
+  document.getElementById('dExpenseSub').textContent = mc ? `průměr ${fmt(expense/mc)} / měsíc` : '';
+  document.getElementById('dBalanceSub').textContent = mc ? `průměr ${fmt(balance/mc)} / měsíc` : '';
+
+  // Počet měsíců vedle filtru
+  const pcEl = document.getElementById('dPeriodCount');
+  if (pcEl) pcEl.textContent = mc ? `${mc}\u00a0${mc === 1 ? 'měsíc' : mc < 5 ? 'měsíce' : 'měsíců'}` : '';
+
+  // Nejvyšší příjem / největší výdaj (absolutní hodnota)
+  const incE = entries.filter(e=>e.amount>0);
+  const expE = entries.filter(e=>e.amount<0);
+  const topInc = incE.length ? incE.reduce((a,b) => b.amount > a.amount ? b : a) : null;
+  const topExp = expE.length ? expE.reduce((a,b) => b.amount < a.amount ? b : a) : null;
+  document.getElementById('dTopInc').textContent     = topInc ? fmt(topInc.amount) : '—';
+  document.getElementById('dTopIncName').textContent = topInc ? (topInc.name || '—') : '';
+  document.getElementById('dTopExp').textContent     = topExp ? fmt(Math.abs(topExp.amount)) : '—';
+  document.getElementById('dTopExpName').textContent = topExp ? (topExp.name || '—') : '';
 
   dChart('dInc'); dChart('dExp'); dChart('dBal');
 
-  state.charts.dInc = makeCatChart('chartIncomeCat',  entries, true);
-  state.charts.dExp = makeCatChart('chartExpenseCat', entries, false);
+  state.charts.dInc = (state.incMode === 'item' ? makeItemChart : makeCatChart)('chartIncomeCat',  entries, true);
+  state.charts.dExp = (state.expMode === 'item' ? makeItemChart : makeCatChart)('chartExpenseCat', entries, false);
 
-  // Bilance po měsících — čárový graf (nahrazuje bar)
+  // Bilance po měsících — čárový graf
   const sm = [...months].sort((a,b) => a.year!==b.year ? a.year-b.year : a.month-b.month);
   state.charts.dBal = makeLineChart(
     'chartBalLine',
     sm.map(m => `${MONTH_NAMES[m.month].slice(0,3)} ${m.year}`),
-    sm.map(m => {
-      const es = m.entries || [];
-      return es.reduce((s,e) => s + e.amount, 0);
-    })
+    sm.map(m => { const es = m.entries || []; return es.reduce((s,e) => s + e.amount, 0); })
   );
 
-  // Rozpad výdajů po kategoriích — progress bary
   renderCatBreakdown(entries);
 
   renderROTable('dTableInc', entries.filter(e=>e.amount>0), true);
   renderROTable('dTableExp', entries.filter(e=>e.amount<0), false);
   document.getElementById('dTableIncSum').textContent = fmt(income);
   document.getElementById('dTableExpSum').textContent = fmt(expense);
+}
+
+function setChartMode(which, mode) {
+  if (which === 'inc') state.incMode = mode;
+  else                 state.expMode = mode;
+
+  // Aktualizuj aktivní tlačítko v toggle
+  const toggle = document.getElementById(which === 'inc' ? 'incToggle' : 'expToggle');
+  if (toggle) {
+    toggle.querySelectorAll('.ctbtn').forEach((btn, i) => {
+      btn.classList.toggle('active', (i === 0 && mode === 'cat') || (i === 1 && mode === 'item'));
+    });
+  }
+
+  // Přerenduj jen daný graf
+  const canvasId = which === 'inc' ? 'chartIncomeCat' : 'chartExpenseCat';
+  const chartKey = which === 'inc' ? 'dInc' : 'dExp';
+  dChart(chartKey);
+  const { entries } = getFiltered();
+  state.charts[chartKey] = (mode === 'item' ? makeItemChart : makeCatChart)(canvasId, entries, which === 'inc');
+}
+
+function renderDashCatStats(entries) {
+  const container = document.getElementById('dashCatStats');
+  if (!container) return;
+  container.innerHTML = '';
+  let idx = 0;
+  for (const cat of allCats()) {
+    const catE = entries.filter(e => e.category === cat);
+    if (!catE.length) continue;
+    const inc = catE.filter(e=>e.amount>0).reduce((s,e)=>s+e.amount,0);
+    const exp = catE.filter(e=>e.amount<0).reduce((s,e)=>s+Math.abs(e.amount),0);
+    const bal = inc - exp;
+    const card = document.createElement('div');
+    card.className = 'cat-stat-card';
+    card.style.animationDelay = `${idx * 30}ms`;
+    card.innerHTML = `
+      <div class="cat-stat-name">${escH(cat)}</div>
+      ${inc > 0 ? `<div class="cat-stat-row"><span>Příjmy</span><span class="csg">${fmt(inc)}</span></div>` : ''}
+      ${exp > 0 ? `<div class="cat-stat-row"><span>Výdaje</span><span class="csr">${fmt(exp)}</span></div>` : ''}
+      <div class="cat-stat-bal ${bal >= 0 ? 'csg' : 'csr'}">${fmtSigned(bal)}</div>`;
+    container.appendChild(card);
+    idx++;
+  }
 }
 
 function renderCatBreakdown(entries) {
@@ -302,7 +457,7 @@ function renderCatBreakdown(entries) {
     .sort((a,b) => expByCat[b] - expByCat[a]);
 
   if (!sorted.length) {
-    container.innerHTML = '<div style="color:var(--text3);font-size:0.8rem;padding:10px 0">Zadne vydaje</div>';
+    container.innerHTML = '<div style="color:var(--text3);font-size:0.8rem;padding:10px 0">Žádné výdaje</div>';
     return;
   }
   const max = expByCat[sorted[0]];
@@ -327,7 +482,8 @@ function renderCatBreakdown(entries) {
 function renderMonthView() {
   const data    = load();
   const m       = getOrCreate(data, state.year, state.month);
-  document.getElementById('mTitle').textContent = `${MONTH_NAMES[state.month]} ${state.year}`;
+  document.getElementById('mTitle').textContent =
+    state.year === 0 ? 'Vzor měsíce' : `${MONTH_NAMES[state.month]} ${state.year}`;
   refreshMonthUI(m.entries);
   renderSubTables(m);
 }
@@ -340,13 +496,6 @@ function refreshMonthUI(entries) {
   document.getElementById('mExpense').textContent = fmt(expense);
   document.getElementById('mBalance').textContent = fmt(balance);
   document.getElementById('mBalance').className   = 'card-value yellow';
-  document.getElementById('mIncSum').textContent  = fmt(income);
-  document.getElementById('mExpSum').textContent  = fmt(expense);
-  renderROTable('mTableInc', entries.filter(e=>e.amount>0), true);
-  renderROTable('mTableExp', entries.filter(e=>e.amount<0), false);
-  dChart('mI'); dChart('mE');
-  state.charts.mI = makeCatChart('mChartInc', entries, true);
-  state.charts.mE = makeCatChart('mChartExp', entries, false);
 }
 
 // ═══════════════════════════════════════════════════
@@ -361,10 +510,16 @@ function renderSubTables(monthData) {
 
   const grid = document.getElementById('subGrid');
   grid.innerHTML = '';
-  for (const cat of allCats()) {
-    grid.appendChild(buildSubBlock(monthData, cat));
-  }
-  initDragDrop(grid);
+  const cats = allCats().slice().sort((a, b) => {
+    const ac = (monthData.entries || []).filter(e => e.category === a).length;
+    const bc = (monthData.entries || []).filter(e => e.category === b).length;
+    return bc - ac;
+  });
+  cats.forEach((cat, i) => {
+    const block = buildSubBlock(monthData, cat);
+    block.style.animationDelay = `${i * 38}ms`;
+    grid.appendChild(block);
+  });
 }
 
 function buildSubBlock(monthData, cat) {
@@ -376,11 +531,9 @@ function buildSubBlock(monthData, cat) {
   const block = document.createElement('div');
   block.className    = 'sub-block';
   block.dataset.cat  = cat;
-  block.draggable    = true;
 
   block.innerHTML = `
     <div class="sub-block-head">
-      <span class="drag-handle" title="Přetáhnout">⠿</span>
       <span class="sub-block-title">${escH(cat)}</span>
       <span class="sub-block-sum" id="catSum-${sid}" style="color:${sumColor}">${fmtSigned(total)}</span>
       <button class="sub-del-btn" title="Smazat kategorii" onclick="deleteCategory('${escH(cat)}')">×</button>
@@ -388,15 +541,15 @@ function buildSubBlock(monthData, cat) {
     <table class="ft">
       <thead>
         <tr>
-          <th style="width:38%">Nazev</th>
-          <th>Poznamka</th>
-          <th class="tr" style="width:110px">Castka</th>
+          <th style="width:38%">Název</th>
+          <th>Poznámka</th>
+          <th class="tr" style="width:110px">Částka</th>
           <th style="width:28px"></th>
         </tr>
       </thead>
       <tbody id="catBody-${sid}"></tbody>
       <tfoot><tr><td colspan="4" class="add-row-cell">
-        <button class="add-row-btn">+ Pridat radek</button>
+        <button class="add-row-btn">+ Přidat řádek</button>
       </td></tr></tfoot>
     </table>`;
 
@@ -407,50 +560,103 @@ function buildSubBlock(monthData, cat) {
   return block;
 }
 
-// ── DRAG & DROP ────────────────────────────────────────────────────────────
+// ── DRAG & DROP  (pointer events — smooth ghost clone) ─────────────────────
 function initDragDrop(grid) {
-  let dragging = null;
+  let ds = null; // drag state
 
-  grid.addEventListener('dragstart', e => {
+  grid.addEventListener('pointerdown', e => {
+    if (!e.target.closest('.drag-handle')) return;
     const block = e.target.closest('.sub-block');
     if (!block) return;
-    dragging = block;
-    setTimeout(() => block.classList.add('dragging'), 0);
-  });
-
-  grid.addEventListener('dragend', e => {
-    const block = e.target.closest('.sub-block');
-    if (block) block.classList.remove('dragging');
-    grid.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-    dragging = null;
-    saveCatOrder();
-  });
-
-  grid.addEventListener('dragover', e => {
     e.preventDefault();
-    const target = e.target.closest('.sub-block');
-    if (!target || target === dragging) return;
-    grid.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-    target.classList.add('drag-over');
-    // Zjistit pozici kurzoru vůči středu bloku
-    const rect = target.getBoundingClientRect();
-    const mid  = rect.top + rect.height / 2;
-    if (e.clientY < mid) {
-      grid.insertBefore(dragging, target);
-    } else {
-      grid.insertBefore(dragging, target.nextSibling);
+
+    const rect = block.getBoundingClientRect();
+
+    // Ghost klon sleduje kurzor
+    const clone = block.cloneNode(true);
+    Object.assign(clone.style, {
+      position:     'fixed',
+      left:         rect.left + 'px',
+      top:          rect.top  + 'px',
+      width:        rect.width + 'px',
+      zIndex:       '1000',
+      pointerEvents:'none',
+      opacity:      '0.9',
+      transform:    'scale(1.02) rotate(-0.4deg)',
+      boxShadow:    '0 24px 64px rgba(0,0,0,0.55)',
+      borderRadius: 'var(--r)',
+      transition:   'transform 0.12s, box-shadow 0.12s',
+    });
+    document.body.appendChild(clone);
+
+    // Placeholder v gridu — block zcela nahrazen placeholderem
+    const ph = document.createElement('div');
+    ph.className = 'sub-placeholder';
+    ph.style.height = rect.height + 'px';
+    block.replaceWith(ph);
+
+    ds = { block, clone, ph, ox: e.clientX - rect.left, oy: e.clientY - rect.top };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup',   onUp,   { once: true });
+    document.addEventListener('pointercancel', onUp, { once: true });
+  });
+
+  function onMove(e) {
+    if (!ds) return;
+    ds.clone.style.left = (e.clientX - ds.ox) + 'px';
+    ds.clone.style.top  = (e.clientY - ds.oy) + 'px';
+    movePlaceholder(e.clientX, e.clientY);
+  }
+
+  function movePlaceholder(cx, cy) {
+    const blocks = [...grid.querySelectorAll('.sub-block')];
+    if (!blocks.length) { grid.appendChild(ds.ph); return; }
+
+    // Najdi nejbližší blok ke kurzoru (2D vzdálenost od středu)
+    let best = null, bestDist = Infinity;
+    for (const b of blocks) {
+      const r = b.getBoundingClientRect();
+      const dx = cx - (r.left + r.width  / 2);
+      const dy = cy - (r.top  + r.height / 2);
+      const d  = dx * dx + dy * dy;
+      if (d < bestDist) { bestDist = d; best = b; }
     }
-  });
 
-  grid.addEventListener('dragleave', e => {
-    const target = e.target.closest('.sub-block');
-    if (target) target.classList.remove('drag-over');
-  });
+    const r    = best.getBoundingClientRect();
+    const midY = r.top  + r.height / 2;
+    const midX = r.left + r.width  / 2;
+    // Vložit před: pokud je kurzor nad středem řádku, nebo na stejném řádku vlevo
+    if (cy < midY - 8 || (Math.abs(cy - midY) <= 8 && cx < midX)) {
+      grid.insertBefore(ds.ph, best);
+    } else {
+      best.after(ds.ph);
+    }
+  }
 
-  grid.addEventListener('drop', e => {
-    e.preventDefault();
-    grid.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-  });
+  function onUp() {
+    if (!ds) return;
+    document.removeEventListener('pointermove', onMove);
+
+    // Animace klonu zpět na placeholder
+    const pr = ds.ph.getBoundingClientRect();
+    Object.assign(ds.clone.style, {
+      transition: 'left 0.18s ease, top 0.18s ease, opacity 0.18s, transform 0.18s',
+      left:       pr.left + 'px',
+      top:        pr.top  + 'px',
+      opacity:    '0',
+      transform:  'scale(1)',
+    });
+
+    const { block, clone, ph } = ds;
+    ds = null;
+
+    setTimeout(() => {
+      ph.replaceWith(block);
+      clone.remove();
+      saveCatOrder();
+    }, 180);
+  }
 }
 
 function buildRow(entry, cat, sid) {
@@ -458,8 +664,8 @@ function buildRow(entry, cat, sid) {
   tr.dataset.id = entry.id;
   const ac = entry.amount >= 0 ? 'c-green' : 'c-red';
   tr.innerHTML = `
-    <td><input class="ce"              value="${escH(entry.name)}"       placeholder="Nazev..."></td>
-    <td><input class="ce"              value="${escH(entry.note || '')}"  placeholder="Poznamka..."></td>
+    <td><input class="ce"              value="${escH(entry.name)}"       placeholder="Název..."></td>
+    <td><input class="ce"              value="${escH(entry.note || '')}"  placeholder="Poznámka..."></td>
     <td><input class="ce mono tr ${ac}" value="${entry.amount !== 0 ? entry.amount : ''}" placeholder="0"></td>
     <td><button class="del-btn" title="Smazat">x</button></td>`;
 
@@ -529,7 +735,7 @@ function renderROTable(tbodyId, entries, isIncome) {
   if (!tbody) return;
   tbody.innerHTML = '';
   if (!entries.length) {
-    tbody.innerHTML = `<tr><td colspan="3" class="ro" style="font-style:italic;color:var(--text3)">Zadne zaznamy</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" class="ro" style="font-style:italic;color:var(--text3)">Žádné záznamy</td></tr>`;
     return;
   }
   const col = isIncome ? 'var(--g3)' : 'var(--r4)';
@@ -592,8 +798,42 @@ function makeCatChart(canvasId, allEntries, isIncome) {
   });
 }
 
+function makeItemChart(canvasId, allEntries, isIncome) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return null;
+  const palette  = isIncome ? GREEN_SHADES : RED_SHADES;
+  const filtered = allEntries.filter(e => isIncome ? e.amount > 0 : e.amount < 0);
+  const byName   = {};
+  for (const e of filtered) {
+    const name = (e.name || '').trim() || '—';
+    byName[name] = (byName[name]||0) + Math.abs(e.amount);
+  }
+  const sorted = Object.entries(byName).sort((a,b) => b[1] - a[1]);
+  const TOP = 10;
+  const labels = []; const values = []; const colors = [];
+  sorted.slice(0, TOP).forEach(([name, val], i) => {
+    labels.push(name); values.push(val); colors.push(palette[i % palette.length]);
+  });
+  if (sorted.length > TOP) {
+    const rest = sorted.slice(TOP).reduce((s,[,v]) => s + v, 0);
+    labels.push('Ostatní'); values.push(rest); colors.push(palette[TOP % palette.length]);
+  }
+  if (!labels.length) { drawEmpty(ctx); return null; }
+  return new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: '#0a0a0d', borderWidth: 2, hoverOffset: 6 }] },
+    options: {
+      cutout: '60%', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: LEGEND_CFG,
+        tooltip: { ...TT_BASE, callbacks: { label: c => ` ${c.label}: ${new Intl.NumberFormat('cs-CZ').format(c.raw)} Kč` } }
+      }
+    }
+  });
+}
+
 /**
- * Čárový graf bilance po měsících — nahrazuje nefunkční bar chart.
+ * Čárový graf bilance po měsících.
  */
 function makeLineChart(canvasId, labels, data) {
   const ctx = document.getElementById(canvasId);
@@ -706,7 +946,7 @@ function drawEmpty(ctx) {
   c.clearRect(0, 0, ctx.width, ctx.height);
   c.fillStyle = '#55556a'; c.font = '12px Syne';
   c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillText('Zadne zaznamy', ctx.width/2, ctx.height/2);
+  c.fillText('Žádné záznamy', ctx.width/2, ctx.height/2);
 }
 
 // ═══════════════════════════════════════════════════
@@ -724,9 +964,24 @@ function confirmNewMonth() {
   const year  = +document.getElementById('mYear').value;
   const month = +document.getElementById('mMonth').value;
   closeModal('modalMonth');
-  const data = load(); getOrCreate(data, year, month); save(data);
+  const data = load();
+  const newM = getOrCreate(data, year, month);
+  // Předvyplnit z vzoru (year=0, month=0), pokud nový měsíc ještě nemá záznamy
+  if (!newM.entries.length) {
+    const tmpl = data.months.find(m => m.year === 0 && m.month === 0);
+    if (tmpl && tmpl.entries.length) {
+      newM.entries = tmpl.entries.map(e => ({ id: uid(), name: e.name, note: e.note || '', amount: e.amount, category: e.category }));
+    }
+  }
+  save(data);
   openMonth(year, month); renderSidebar();
-  toast(`${MONTH_NAMES[month]} ${year} vytvoren`);
+  toast(`${MONTH_NAMES[month]} ${year} vytvořen`);
+}
+
+function openTemplate() {
+  state.year = 0; state.month = 0;
+  showView('month');
+  renderSidebar();
 }
 document.getElementById('modalMonth').addEventListener('click', e => {
   if (e.target === document.getElementById('modalMonth')) closeModal('modalMonth');
@@ -737,14 +992,14 @@ document.getElementById('modalMonth').addEventListener('click', e => {
 // ═══════════════════════════════════════════════════
 
 function addCustomCategory() {
-  const name = prompt('Nazev nove kategorie:');
+  const name = prompt('Název nové kategorie:');
   if (!name || !name.trim()) return;
   const key = name.trim();
-  if (allCats().includes(key)) { alert('Tato kategorie jiz existuje.'); return; }
+  if (allCats().includes(key)) { alert('Tato kategorie již existuje.'); return; }
   const data = load(); data.customCats.push(key); save(data);
   const m = getOrCreate(data, state.year, state.month);
   renderSubTables(m);
-  toast(`Kategorie "${key}" pridana`);
+  toast(`Kategorie "${key}" přidána`);
 }
 
 // ═══════════════════════════════════════════════════
@@ -756,7 +1011,7 @@ function exportData() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = `finance-${new Date().toISOString().slice(0,10)}.json`; a.click();
-  URL.revokeObjectURL(a.href); toast('Export dokoncen');
+  URL.revokeObjectURL(a.href); toast('Export dokončen');
 }
 
 function importData(e) {
@@ -779,8 +1034,9 @@ function importData(e) {
         }
       }
       save(raw);
+      invalidateCache();
       renderSidebar();
-      toast('Import dokoncen');
+      toast('Import dokončen');
       // Po importu znovu vykreslit aktualni view se spravnymi daty
       if (state.view === 'month' && state.year) {
         const data = load();
@@ -795,8 +1051,35 @@ function importData(e) {
 }
 
 // ═══════════════════════════════════════════════════
-// INIT
+// MOBILE NAV
 // ═══════════════════════════════════════════════════
+
+function toggleSidebar() {
+  const sb  = document.getElementById('sidebar');
+  const ov  = document.getElementById('sidebarOverlay');
+  const open = sb.classList.toggle('mob-open');
+  ov.classList.toggle('open', open);
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('mob-open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
+}
+
+function mobNav(v) {
+  document.getElementById('mobNavDash').classList.toggle('active',  v === 'dashboard');
+  document.getElementById('mobNavMonth').classList.toggle('active', v === 'month');
+  document.getElementById('mobNavMenu').classList.remove('active');
+  showView(v);
+  closeSidebar();
+}
+
+// Close sidebar on month select (mobile)
+document.getElementById('sbMonths').addEventListener('click', () => {
+  if (window.innerWidth <= 768) closeSidebar();
+});
+
+
 
 (function init() {
   const fromM = document.getElementById('dashFromM');
