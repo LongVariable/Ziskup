@@ -8,6 +8,71 @@ const STORAGE_KEY = 'finance_v2';
 const DEFAULT_CATS = ['Prace', 'Sporeni', 'Investice', 'Nakupy', 'Jine'];
 const MONTH_NAMES  = ['','Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'];
 
+// SVG ikony — klíč → vnitřní obsah <svg> (24×24, stroke=currentColor)
+const ICONS = {
+  // Peníze & finance
+  'wallet':    '<path d="M20 12V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2v-5"/><path d="M20 12h-4a2 2 0 000 4h4V12z"/>',
+  'card':      '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="10" y2="15"/>',
+  'bank':      '<path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 10v11M12 10v11M16 10v11"/>',
+  'coins':     '<circle cx="10" cy="14" r="6"/><path d="M14.35 8A6 6 0 1119 14.65"/>',
+  'transfer':  '<path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>',
+  'chart':     '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>',
+  'trending':  '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  'piggy':     '<path d="M19 9c0-3.87-3.13-7-7-7S5 5.13 5 9c-1.1 0-2 .9-2 2s.9 2 2 2c0 2.76 1.96 5.08 4.59 5.71L9 21h6l-.59-2.29C16.96 17.08 19 14.76 19 12c1.1 0 2-.9 2-2s-.9-2-2-2z"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/><path d="M19 9h2"/>',
+  // Domácnost & doprava
+  'home':      '<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  'car':       '<path d="M5 17H3a2 2 0 01-2-2V9l3-4h12l3 4v6a2 2 0 01-2 2h-2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>',
+  'plane':     '<path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/>',
+  'train':     '<rect x="5" y="2" width="14" height="16" rx="3"/><path d="M5 9h14M9 16l-2 4M15 16l2 4M12 2v7"/>',
+  'fuel':      '<path d="M3 22V7l7-5 5 3.5V6"/><path d="M3 11h7M3 15h7M3 19h7"/><rect x="14" y="10" width="7" height="8" rx="1"/><path d="M17.5 10V8a2 2 0 10-4 0"/>',
+  'cart':      '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.97 1.61h9.72a2 2 0 001.97-1.67L23 6H6"/>',
+  'tools':     '<path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>',
+  'key':       '<circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6M15.5 7.5L18 10l3-3"/>',
+  // Jídlo & pití
+  'utensils':  '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2M7 2v20M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/>',
+  'coffee':    '<path d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/>',
+  'apple':     '<path d="M12 3c0 0 2-1.5 4-1 0 2-1 3.5-3 4"/><path d="M9 6.5A5.5 5.5 0 003 12c0 4.5 3.5 9 5.5 10 .5.2 1 .4 1.5.4s1-.2 1.5-.4c.5-.2 1-.5 1.5-.5s1 .3 1.5.5c.5.2 1 .4 1.5.4 2 0 5.5-5.5 5.5-10A5.5 5.5 0 0015 6.5c-1.5 0-2.5.5-3 1.5-.5-1-1.5-1.5-3-1.5z"/>',
+  'wine':      '<path d="M8 22h8M12 11v11M19 3H5l3 8a4 4 0 008 0l3-8z"/>',
+  'leaf':      '<path d="M2 22l11-11"/><path d="M13.5 2C10 6 8 10 10 15c1 2.5 3 4.5 5.5 5.5C20.5 22 22 16 22 12c0-5-3.5-10-8.5-10z"/>',
+  'pizza':     '<path d="M12 2a10 10 0 0110 10H12V2z"/><path d="M12 12L3.5 20.5A10 10 0 0112 22a10 10 0 0010-10"/><circle cx="16" cy="8" r="1.5"/><circle cx="9" cy="16" r="1.5"/>',
+  'droplet':   '<path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/>',
+  'fish':      '<path d="M6.5 12c0-5.5 5.5-8 5.5-8s5.5 2.5 5.5 8-5.5 8-5.5 8-5.5-2.5-5.5-8z"/><circle cx="15" cy="11.5" r="1"/><path d="M2 12h4.5"/>',
+  // Technologie & práce
+  'laptop':    '<rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/>',
+  'phone':     '<rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>',
+  'box':       '<path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
+  'bulb':      '<line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0018 8 6 6 0 006 8c0 1.38.56 2.38 1.5 3.5A4.61 4.61 0 018.91 14"/>',
+  'book':      '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>',
+  'grad':      '<path d="M22 10v6M2 10l10-5 10 5-10 5-10-5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>',
+  'briefcase': '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>',
+  'pen':       '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+  // Zdraví & volný čas
+  'pill':      '<path d="M10.5 20.5L3.5 13.5a5 5 0 017-7l7 7a5 5 0 01-7 7z"/><line x1="8.5" y1="11.5" x2="15.5" y2="18.5"/>',
+  'cross':     '<rect x="9" y="2" width="6" height="20" rx="1"/><rect x="2" y="9" width="20" height="6" rx="1"/>',
+  'dumbbell':  '<path d="M6.5 6.5h11M6.5 17.5h11M4.5 9h-2v6h2M19.5 9h2v6h-2M6.5 6.5v11M17.5 6.5v11"/>',
+  'ball':      '<circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>',
+  'gamepad':   '<rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 12h4M8 10v4"/><circle cx="15" cy="11" r="1"/><circle cx="17" cy="13" r="1"/>',
+  'film':      '<rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20M17 2v20M2 12h20M2 7h5M17 7h5M2 17h5M17 17h5"/>',
+  'music':     '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  'camera':    '<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>',
+  // Různé
+  'gift':      '<polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/>',
+  'heart':     '<path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>',
+  'person':    '<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  'baby':      '<circle cx="12" cy="7" r="3.5"/><path d="M4 21v-2a7 7 0 0114 0v2"/>',
+  'paw':       '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><circle cx="4" cy="8" r="2"/><path d="M12 9c-3.5 0-7 3-7 7a4.5 4.5 0 009 0 4.5 4.5 0 009 0c0-4-3.5-7-7-7h-4z"/>',
+  'tree':      '<path d="M17 14l-5-9-5 9h3l-2 8h8l-2-8h3z"/>',
+  'star':      '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+  'fire':      '<path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 01-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z"/>',
+  'target':    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  'globe':     '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>',
+};
+
+// Sestaví SVG element z paths (fill=none, stroke=currentColor)
+function makeSvg(paths, size = 15) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+}
+
 // Příjmy — zelené + modré odstíny (střídají se)
 const GREEN_SHADES = ['#1fd87a','#2870ff','#3eea92','#4090ff','#0fa854','#60b0ff','#6ef4b4','#1a50cc','#0a6634','#80c8ff'];
 // Výdaje — tmavě červená → červená → oranžová (žádná žlutá ani růžová)
@@ -541,7 +606,8 @@ function buildSubBlock(monthData, cat) {
     <table class="ft">
       <thead>
         <tr>
-          <th style="width:38%">Název</th>
+          <th style="width:30px"></th>
+          <th style="width:35%">Název</th>
           <th>Poznámka</th>
           <th class="tr" style="width:110px">Částka</th>
           <th style="width:28px"></th>
@@ -664,6 +730,7 @@ function buildRow(entry, cat, sid) {
   tr.dataset.id = entry.id;
   const ac = entry.amount >= 0 ? 'c-green' : 'c-red';
   tr.innerHTML = `
+    <td class="icon-cell"><button class="icon-btn${entry.icon ? ' has-icon' : ''}" title="Vybrat ikonu">${entry.icon && ICONS[entry.icon] ? makeSvg(ICONS[entry.icon]) : '<span class="icon-ph">+</span>'}</button></td>
     <td><input class="ce"              value="${escH(entry.name)}"       placeholder="Název..."></td>
     <td><input class="ce"              value="${escH(entry.note || '')}"  placeholder="Poznámka..."></td>
     <td><input class="ce mono tr ${ac}" value="${entry.amount !== 0 ? entry.amount : ''}" placeholder="0"></td>
@@ -698,13 +765,17 @@ function buildRow(entry, cat, sid) {
     refreshAfterEdit(m.entries, cat, sid);
   });
 
+  tr.querySelector('.icon-btn').addEventListener('click', function() {
+    openIconPicker(entry.id, cat, sid, this);
+  });
+
   return tr;
 }
 
 function addRow(cat, sid) {
   const data  = load();
   const m     = getOrCreate(data, state.year, state.month);
-  const entry = { id: uid(), name: '', note: '', amount: 0, category: cat };
+  const entry = { id: uid(), name: '', note: '', amount: 0, category: cat, icon: '' };
   m.entries.push(entry);
   save(data);
   const tbody = document.getElementById(`catBody-${sid}`);
@@ -742,7 +813,7 @@ function renderROTable(tbodyId, entries, isIncome) {
   for (const e of entries) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="ro">${escH(e.name)||'—'}</td>
+      <td class="ro">${e.icon && ICONS[e.icon] ? `<span class="row-icon">${makeSvg(ICONS[e.icon], 13)}</span>` : ''}${escH(e.name)||'—'}</td>
       <td class="ro"><span class="cat-tag">${escH(e.category)}</span></td>
       <td class="ro mono tr" style="color:${col}">${fmt(Math.abs(e.amount))}</td>`;
     tbody.appendChild(tr);
@@ -950,6 +1021,80 @@ function drawEmpty(ctx) {
 }
 
 // ═══════════════════════════════════════════════════
+// ICON PICKER
+// ═══════════════════════════════════════════════════
+
+let _iconPickerClose = null;
+let _iconPickerLastClose = 0;
+
+function openIconPicker(entryId, cat, sid, btnEl) {
+  if (Date.now() - _iconPickerLastClose < 120) return;
+  closeIconPicker();
+
+  const popup = document.createElement('div');
+  popup.id = 'iconPickerPopup';
+  popup.className = 'icon-picker-popup';
+
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'icon-clear-btn';
+  clearBtn.textContent = 'Odebrat ikonu';
+  clearBtn.addEventListener('click', e => { e.stopPropagation(); pickIcon('', entryId, cat, sid, btnEl); });
+  popup.appendChild(clearBtn);
+
+  const grid = document.createElement('div');
+  grid.className = 'icon-grid';
+  for (const [key, paths] of Object.entries(ICONS)) {
+    const btn = document.createElement('button');
+    btn.className = 'icon-item';
+    btn.title = key;
+    btn.innerHTML = makeSvg(paths, 20);
+    btn.addEventListener('click', e => { e.stopPropagation(); pickIcon(key, entryId, cat, sid, btnEl); });
+    grid.appendChild(btn);
+  }
+  popup.appendChild(grid);
+  document.body.appendChild(popup);
+
+  // Position near trigger button
+  const bRect = btnEl.getBoundingClientRect();
+  const pw = 264, ph = 280;
+  const left = Math.min(bRect.left, window.innerWidth - pw - 8);
+  const top  = (bRect.bottom + 4 + ph > window.innerHeight) ? bRect.top - ph - 4 : bRect.bottom + 4;
+  popup.style.left = Math.max(8, left) + 'px';
+  popup.style.top  = Math.max(8, top)  + 'px';
+
+  _iconPickerClose = e => {
+    const p = document.getElementById('iconPickerPopup');
+    if (p && !p.contains(e.target)) {
+      document.removeEventListener('pointerdown', _iconPickerClose);
+      _iconPickerClose = null;
+      closeIconPicker();
+    }
+  };
+  setTimeout(() => document.addEventListener('pointerdown', _iconPickerClose), 10);
+}
+
+function closeIconPicker() {
+  if (_iconPickerClose) {
+    document.removeEventListener('pointerdown', _iconPickerClose);
+    _iconPickerClose = null;
+  }
+  document.getElementById('iconPickerPopup')?.remove();
+  _iconPickerLastClose = Date.now();
+}
+
+function pickIcon(key, entryId, cat, sid, btnEl) {
+  const data = load();
+  const m    = getOrCreate(data, state.year, state.month);
+  const e    = m.entries.find(x => x.id === entryId);
+  if (e) { e.icon = key; save(data); }
+  if (btnEl) {
+    btnEl.innerHTML = key && ICONS[key] ? makeSvg(ICONS[key]) : '<span class="icon-ph">+</span>';
+    btnEl.classList.toggle('has-icon', !!key);
+  }
+  closeIconPicker();
+}
+
+// ═══════════════════════════════════════════════════
 // MODAL — NOVÝ MĚSÍC
 // ═══════════════════════════════════════════════════
 
@@ -970,7 +1115,7 @@ function confirmNewMonth() {
   if (!newM.entries.length) {
     const tmpl = data.months.find(m => m.year === 0 && m.month === 0);
     if (tmpl && tmpl.entries.length) {
-      newM.entries = tmpl.entries.map(e => ({ id: uid(), name: e.name, note: e.note || '', amount: e.amount, category: e.category }));
+      newM.entries = tmpl.entries.map(e => ({ id: uid(), name: e.name, note: e.note || '', amount: e.amount, category: e.category, icon: e.icon || '' }));
     }
   }
   save(data);

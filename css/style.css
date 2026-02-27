@@ -34,7 +34,7 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
-body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 13px; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 13px; -webkit-font-smoothing: antialiased; }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -464,3 +464,58 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); font
   .card-value { font-size: 1rem; }
   .cat-row-name { width: 70px; }
 }
+
+/* ── ICON PICKER ─────────────────────────────── */
+.icon-cell { width: 30px; padding: 0 !important; text-align: center; vertical-align: middle; }
+.icon-btn {
+  background: transparent; border: none; cursor: pointer;
+  padding: 5px 4px; width: 100%;
+  border-radius: 4px; transition: background 0.12s, opacity 0.15s;
+  line-height: 1; display: flex; align-items: center; justify-content: center;
+  opacity: 0; color: var(--text3);
+}
+.icon-btn.has-icon { opacity: 1; color: var(--text2); }
+.ft tbody tr:hover .icon-btn { opacity: 0.55; }
+.ft tbody tr:hover .icon-btn.has-icon { opacity: 1; }
+.icon-btn:hover { background: rgba(255,255,255,0.07); opacity: 1 !important; color: var(--text); }
+.icon-ph { font-size: 0.85rem; line-height: 1; color: inherit; }
+
+.icon-picker-popup {
+  position: fixed; z-index: 500;
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04);
+  width: 264px;
+  animation: fadeIn 0.12s ease;
+}
+.icon-clear-btn {
+  display: block; width: 100%; background: transparent;
+  border: 1px dashed var(--border); border-radius: 6px;
+  color: var(--text3); font-family: var(--sans); font-size: 0.71rem;
+  padding: 4px 8px; cursor: pointer; margin-bottom: 8px;
+  transition: all 0.15s; text-align: center;
+}
+.icon-clear-btn:hover { border-color: var(--r4); color: var(--r4); }
+.icon-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.icon-item {
+  background: transparent; border: none; cursor: pointer;
+  padding: 6px 4px; border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, transform 0.1s;
+  color: var(--text2);
+}
+.icon-item:hover { background: var(--bg4); transform: scale(1.15); color: var(--text); }
+.row-icon { margin-right: 5px; display: inline-flex; vertical-align: middle; color: var(--text3); }
+
+/* ── VISUAL POLISH ───────────────────────────── */
+body {
+  background-image:
+    radial-gradient(ellipse 70% 50% at 12% 4%, rgba(40,112,255,0.045) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 88% 96%, rgba(31,216,122,0.03) 0%, transparent 50%);
+  background-attachment: fixed;
+}
+.sub-block-head {
+  background: linear-gradient(to right, var(--bg3), var(--bg3) 80%, rgba(30,30,39,0.6));
+}
+.view-header { border-bottom-color: rgba(42,42,54,0.8); }
+.card { background-image: linear-gradient(160deg, rgba(255,255,255,0.025) 0%, transparent 40%); }
